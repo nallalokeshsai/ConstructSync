@@ -59,8 +59,8 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 
 // Start Server
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`🚀 ConstructSync Backend API running on http://localhost:${PORT}`);
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 ConstructSync Backend API running on http://0.0.0.0:${PORT}`);
     console.log(`📊 Health Check: http://localhost:${PORT}/api/health`);
   });
 }
