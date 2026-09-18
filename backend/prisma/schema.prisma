@@ -1,0 +1,288 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  name         String
+  password     String
+  role         String    @default("site_engineer") // admin, project_director, procurement_manager, site_engineer, finance_controller, vendor
+  phone        String?
+  designation  String?
+  avatar       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relationships
+  managedProjects   Project[]           @relation("ProjectManager")
+  requestedIndents  Indent[]            @relation("RequestedBy")
+  approvedIndents   Indent[]            @relation("ApprovedBy")
+  createdPOs        PurchaseOrder[]     @relation("POCreatedBy")
+  receivedGRNs      GRN[]               @relation("GRNReceivedBy")
+  reviewsGiven      VendorPerformance[] @relation("ReviewedBy")
+  auditLogs         AuditLog[]
+}
+
+model Vendor {
+  id                String    @id @default(uuid())
+  companyName       String
+  contactPerson     String?
+  phone             String?
+  email             String?
+  gstin             String?   @unique
+  pan               String?
+  bankName          String?
+  bankAccount       String?
+  ifscCode          String?
+  category          String    // Steel, Cement, RMC, Electrical, Plumbing, Sand, Tiles, Hardware, etc.
+  city              String?
+  state             String?
+  complianceStatus  String    @default("compliant") // compliant, expiring, non_compliant
+  performanceScore  Float     @default(0.0) // 0.0 to 5.0
+  status            String    @default("active") // active, blacklisted, inactive
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relationships
+  purchaseOrders      PurchaseOrder[]
+  invoices            Invoice[]
+  performanceReviews  VendorPerformance[]
+  documents           ComplianceDocument[]
+  quotes              VendorQuote[]
+}
+
+model Project {
+  id                 String    @id @default(uuid())
+  projectName        String
+  projectCode        String    @unique
+  location           String?
+  totalBudget        Float     @default(0.0)
+  procurementBudget  Float     @default(0.0)
+  startDate          DateTime?
+  expectedEndDate    DateTime?
+  projectManagerId   String?
+  status             String    @default("active") // planning, active, on_hold, completed
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Relationships
+  projectManager     User?               @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  indents            Indent[]
+  purchaseOrders     PurchaseOrder[]
+  performanceReviews VendorPerformance[]
+}
+
+model Indent {
+  id              String       @id @default(uuid())
+  indentNumber    String       @unique
+  projectId       String
+  requestedById   String
+  requiredDate    DateTime?
+  priority        String       @default("normal") // urgent, normal, low
+  approvalStatus  String       @default("pending") // pending, approved, rejected
+  approvedById    String?
+  approvedAt      DateTime?
+  approvalComments String?
+  notes           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Relationships
+  project         Project      @relation(fields: [projectId], references: [id])
+  requestedBy     User         @relation("RequestedBy", fields: [requestedById], references: [id])
+  approvedBy      User?        @relation("ApprovedBy", fields: [approvedById], references: [id])
+  items           IndentItem[]
+  purchaseOrders  PurchaseOrder[]
+}
+
+model IndentItem {
+  id               String   @id @default(uuid())
+  indentId         String
+  materialName     String
+  materialCategory String?
+  quantity         Float
+  unit             String   // MT, bags, cum, pieces, sqft, meters, kg
+  estimatedRate    Float?
+  notes            String?
+
+  indent           Indent   @relation(fields: [indentId], references: [id], onDelete: Cascade)
+}
+
+model PurchaseOrder {
+  id            String    @id @default(uuid())
+  poNumber      String    @unique
+  indentId      String?
+  vendorId      String
+  projectId     String
+  totalAmount   Float     @default(0.0)
+  gstAmount     Float     @default(0.0)
+  grandTotal    Float     @default(0.0)
+  deliveryDate  DateTime?
+  paymentTerms  String?   // Net 30, Net 45, 50% Advance, On Delivery, etc.
+  status        String    @default("draft") // draft, sent, acknowledged, delivered, closed, cancelled
+  createdById   String
+  isMaverick    Boolean   @default(false)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relationships
+  indent        Indent?   @relation(fields: [indentId], references: [id])
+  vendor        Vendor    @relation(fields: [vendorId], references: [id])
+  project       Project   @relation(fields: [projectId], references: [id])
+  createdBy     User      @relation("POCreatedBy", fields: [createdById], references: [id])
+  items         POItem[]
+  grns          GRN[]
+  invoices      Invoice[]
+  performanceReviews VendorPerformance[]
+}
+
+model POItem {
+  id            String         @id @default(uuid())
+  poId          String
+  materialName  String
+  quantity      Float
+  unit          String
+  unitRate      Float
+  gstPercentage Float          @default(18.0)
+  totalAmount   Float
+
+  purchaseOrder PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
+  grnItems      GRNItem[]
+}
+
+model GRN {
+  id                 String    @id @default(uuid())
+  grnNumber          String    @unique
+  poId               String
+  receivedById       String
+  receivedDate       DateTime  @default(now())
+  deliveryChallanNo  String?
+  vehicleNumber      String?
+  qualityStatus      String    @default("accepted") // accepted, partial, rejected
+  rejectionReason    String?
+  notes              String?
+  photoUrls          String?   // Stored as JSON string array
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Relationships
+  purchaseOrder      PurchaseOrder @relation(fields: [poId], references: [id])
+  receivedBy         User          @relation("GRNReceivedBy", fields: [receivedById], references: [id])
+  items              GRNItem[]
+  invoices           Invoice[]
+}
+
+model GRNItem {
+  id                String   @id @default(uuid())
+  grnId             String
+  poItemId          String?
+  materialName      String
+  orderedQuantity   Float
+  receivedQuantity  Float
+  acceptedQuantity  Float
+  rejectedQuantity  Float    @default(0.0)
+  remarks           String?
+
+  grn               GRN      @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  poItem            POItem?  @relation(fields: [poItemId], references: [id])
+}
+
+model Invoice {
+  id                     String    @id @default(uuid())
+  invoiceNumber          String
+  vendorId               String
+  poId                   String
+  grnId                  String?
+  invoiceAmount          Float     @default(0.0)
+  gstAmount              Float     @default(0.0)
+  tdsPercentage          Float     @default(2.0)
+  tdsAmount              Float     @default(0.0)
+  netPayable             Float     @default(0.0)
+  invoiceDate            DateTime?
+  dueDate                DateTime?
+  paymentStatus          String    @default("pending") // pending, approved, paid, disputed
+  threeWayMatchStatus    String    @default("pending") // matched, mismatch, pending
+  matchDiscrepancies     String?   // JSON details of quantity, price, or tax mismatch
+  notes                  String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  // Relationships
+  vendor                 Vendor        @relation(fields: [vendorId], references: [id])
+  purchaseOrder          PurchaseOrder @relation(fields: [poId], references: [id])
+  grn                    GRN?          @relation(fields: [grnId], references: [id])
+}
+
+model VendorPerformance {
+  id                       String    @id @default(uuid())
+  vendorId                 String
+  projectId                String
+  poId                     String?
+  deliveryTimelinessScore  Float     // 0.0 - 5.0
+  qualityScore             Float     // 0.0 - 5.0
+  pricingCompetitiveness   Float     // 0.0 - 5.0
+  communicationScore       Float     // 0.0 - 5.0
+  overallScore             Float     // Weighted average
+  reviewNotes              String?
+  reviewedById             String
+  reviewDate               DateTime  @default(now())
+  createdAt                DateTime  @default(now())
+
+  // Relationships
+  vendor                   Vendor        @relation(fields: [vendorId], references: [id])
+  project                  Project       @relation(fields: [projectId], references: [id])
+  purchaseOrder            PurchaseOrder? @relation(fields: [poId], references: [id])
+  reviewedBy               User          @relation("ReviewedBy", fields: [reviewedById], references: [id])
+}
+
+model ComplianceDocument {
+  id             String    @id @default(uuid())
+  vendorId       String
+  documentType   String    // gst_cert, pan_card, insurance, msme_cert, bank_proof
+  title          String
+  documentNumber String?
+  fileUrl        String?
+  issueDate      DateTime?
+  expiryDate     DateTime?
+  status         String    @default("valid") // valid, expiring, expired
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  vendor         Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+}
+
+model VendorQuote {
+  id                   String    @id @default(uuid())
+  vendorId             String
+  materialName         String
+  materialCategory     String
+  unitRate             Float
+  unit                 String
+  validTill            DateTime?
+  minimumOrderQuantity Float?
+  leadTimeDays         Int?
+  notes                String?
+  createdAt            DateTime  @default(now())
+
+  vendor               Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String   // e.g., INDENT_CREATED, PO_APPROVED, GRN_LOGGED, 3WAY_MATCHED, VENDOR_ONBOARDED
+  entity     String   // e.g., Indent, PurchaseOrder, GRN, Invoice, Vendor
+  entityId   String?
+  details    String?  // JSON string
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id])
+}
